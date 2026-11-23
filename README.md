@@ -107,3 +107,22 @@ llm-classification-finetuning/
 # Run 5-fold cross validation and generate submission
 & "D:\ag-ai\.venv\Scripts\python.exe" "D:\ag-ai\llm-classification-finetuning\run_pipeline.py" --model-type ensemble --sample-rows 10000 --n-splits 5
 ```
+
+
+---
+
+## 👤 Author
+
+- **Swastik Tripathi** — [GitHub (@tripathiswastik)](https://github.com/tripathiswastik) • [LinkedIn](https://www.linkedin.com/in/swastik-tripathi-52333511a/)
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
+
+---
+
+## 🏷️ Repository Metadata & Topic Tags
+- **About Description**: LLM preference classification pipeline featuring symmetric feature engineering and GPU tri-ensemble for Chatbot Arena.
+- **Core Topics**: `llm-evaluation` `pytorch` `machine-learning` `kaggle-competition` `nlp` `ensemble-learning` `feature-engineering` `python`
