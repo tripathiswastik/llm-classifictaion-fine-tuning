@@ -120,3 +120,12 @@
   - Achieved record 10k Calibrated OOF Log Loss: **`1.01538`** (strictly beating Version 7's `1.01689` by **`-0.00151`**).
   - Passed all 22/22 unit and edge case tests with 100% invariant conformance.
   - Verified and compiled self-contained Version 11 notebook targeting $\le \mathbf{1.00000}$ on Kaggle Public Leaderboard.
+- **[x] Phase 12: Paradigm Shift to Transformer Cross-Encoder for Goal $\le 0.85000$ (Version 12)**:
+  - User invoked `/goal score<=0.85`. Identified that tabular + n-gram/SVD models have reached their global asymptotic ceiling (`~1.006 - 1.015`). Breaching $\le 0.85000$ requires fine-tuned Transformer Language Model Cross-Encoders.
+  - Implemented `DebertaPreferenceClassifier` (`microsoft/deberta-v3-small`, 141M parameters) with cross-encoder sequence input `[CLS] Prompt: {P} [SEP] Response A: {A} [SEP] Response B: {B} [SEP]`.
+  - Built balanced context allocation (128 prompt + 192 response A + 192 response B = 512 tokens max length) to eliminate truncation position bias.
+  - Enforced mathematical anti-symmetry via Test-Time Augmentation (TTA) pair swapping: averages predictions of $(P, A, B)$ and $(P, B, A)$ with flipped labels, guaranteeing $P(A \mid B, A) = P(B \mid A, B)$ and $P(\text{tie} \mid B, A) = P(\text{tie} \mid A, B)$.
+  - Integrated Mixed Precision FP16 training with PyTorch `GradScaler`, AdamW (`lr=2e-5, weight_decay=0.01`), CosineAnnealingLR with warmup, and gradient accumulation.
+  - Verified training and TTA inference pipeline on local NVIDIA GPU (`scratch/test_deberta_training_loop.py`).
+  - Added 3-Parameter Decoupled Dirichlet Calibration and Exact-Match Bayesian Prior override ($[0.0491, 0.0491, 0.9018]$).
+  - Built and verified self-contained Version 12 notebook (`submission_notebook.ipynb`) targeting $\le \mathbf{0.85000}$ on Kaggle.
