@@ -14,6 +14,7 @@ import test_calibration
 import test_submission_format
 import test_gpu_model
 import test_symmetry
+import test_edge_cases_and_anomalies
 
 print("=" * 60)
 print("RUNNING FULL 4-PHASE GOVERNANCE TEST SUITE")
@@ -49,6 +50,16 @@ test_symmetry.test_anti_symmetry_property()
 test_symmetry.test_ensemble_anti_symmetry_property()
 print("  [PASS] test_symmetry.py (2/2)")
 
+# 6. Edge Case & Anomaly Invariant Tests (182 features & extreme boundaries)
+test_edge_cases_and_anomalies.test_empty_and_whitespace_responses()
+test_edge_cases_and_anomalies.test_exact_identical_response_anomaly()
+test_edge_cases_and_anomalies.test_extreme_length_outlier()
+test_edge_cases_and_anomalies.test_multilingual_and_unicode_edge_cases()
+test_edge_cases_and_anomalies.test_multi_turn_edge_cases()
+test_edge_cases_and_anomalies.test_out_of_vocabulary_lsa_zero_norm()
+test_edge_cases_and_anomalies.test_full_pipeline_anti_symmetry_and_simplex_on_edge_cases()
+print("  [PASS] test_edge_cases_and_anomalies.py (7/7)")
+
 print("\n" + "=" * 60)
-print(">>> ALL 15/15 UNIT TESTS PASSED WITH 100% INVARIANT CONFORMANCE <<<")
+print(">>> ALL 22/22 UNIT & EDGE CASE TESTS PASSED WITH 100% INVARIANT CONFORMANCE <<<")
 print("=" * 60)

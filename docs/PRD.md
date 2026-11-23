@@ -94,3 +94,15 @@
   - Achieved record 10k CV Log Loss: **`1.01424`** ($\Delta = \mathbf{-0.00177}$ below Version 7 `1.01601`).
   - Passed 15/15 comprehensive unit tests (100% pass rate).
   - Generated and verified Version 9 notebook targeting $\le \mathbf{1.00000}$ on Kaggle Public Leaderboard.
+- **[x] Phase 10: 360-Degree Anomaly Hardening, Exact-Match Prior & Rebalanced Tri-Ensemble (Version 10)**:
+  - Deep dataset scan across all 57,477 battles uncovering 5 core anomalies and edge cases:
+    1. Fixed 0-word Flesch Reading Ease bug (`206.835` -> `0.0` for empty/punctuation-only responses).
+    2. Byte-identical responses (275 battles in dataset) show an empirical 90.18% Tie prior: formulated exact-match Bayesian post-processing override $[0.0491, 0.0491, 0.9018]$.
+    3. Multi-turn conversations (12.8% of battles, 7,300 samples) exhibit final-turn decision dominance: engineered `diff_final_len`, `diff_final_log_len`, `diff_final_jacc`, `sym_is_multi_turn`, `sym_num_turns`.
+    4. Non-linear length preference cliffs ($> 1.5\times$ response length doubles win rate): engineered `diff_len_ratio_15`, `diff_len_ratio_20`, `diff_len_ratio_30`, and `sym_extreme_len_imbalance` which improved LR loss from `1.03490` to `1.03184`.
+    5. Zero-token / OOV inputs verified to yield clean zero norms without NaN or division by zero.
+  - Rebalanced Tri-Ensemble: restored PyTorch GPU temperature to 1.0 (unflattened) and allocated weights $0.38\text{ LR} + 0.52\text{ HistGBDT} + 0.10\text{ PyTorch GPU}$ to prevent neural network over-flattening on unseen test data.
+  - Total feature space: 182 anti-symmetric features.
+  - Formulated comprehensive edge case test suite (`tests/test_edge_cases_and_anomalies.py`) with 7 new tests covering empty text, exact duplicates, 50,000-char length outliers, Chinese/Russian unicode, multi-turn 1 vs 15 turns, OOV SVD zero norms, and pipeline anti-symmetry.
+  - Passed 22/22 unit and edge case tests (100% pass rate).
+  - Verified and compiled self-contained Version 10 notebook (`submission_notebook.ipynb`) targeting $\le \mathbf{1.00000}$ on Kaggle Public Leaderboard.

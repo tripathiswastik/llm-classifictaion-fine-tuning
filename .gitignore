@@ -15,6 +15,9 @@ data/*.zip
 venv/
 ENV/
 
+# Scratch numpy caches
+scratch/*.npz
+
 # Jupyter / IPython
 .ipynb_checkpoints/
 

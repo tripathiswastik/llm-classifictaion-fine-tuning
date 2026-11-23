@@ -140,9 +140,9 @@ def build_logistic_model(feature_names: List[str], C: float = 1.0) -> SymmetricM
 def build_hist_gbdt_model(
     feature_names: List[str],
     max_iter: int = 150,
-    learning_rate: float = 0.04,
+    learning_rate: float = 0.05,
     max_leaf_nodes: int = 31,
-    min_samples_leaf: int = 45,
+    min_samples_leaf: int = 50,
 ) -> SymmetricModelWrapper:
     clf = HistGradientBoostingClassifier(
         loss=get_hist_gbdt_loss(),
@@ -202,9 +202,9 @@ if TORCH_AVAILABLE:
             feature_names: List[str],
             hidden_dim: int = 128,
             lr: float = 2e-3,
-            epochs: int = 25,
+            epochs: int = 15,
             batch_size: int = 256,
-            temperature: float = 2.8,
+            temperature: float = 1.0,
             device: Optional[Union[str, torch.device]] = None,
         ):
             self.feature_names = feature_names
@@ -282,16 +282,16 @@ if TORCH_AVAILABLE:
     class TriEnsemblePreferenceModel:
         """
         Three-way blend combining:
-        1. Linear Regularized Logistic Regression (0.315)
-        2. Non-linear HistGBDT (0.460)
-        3. Deep Anti-Symmetric Neural Network on NVIDIA GPU (0.225)
+        1. Linear Regularized Logistic Regression (0.38)
+        2. Non-linear HistGBDT (0.52)
+        3. Deep Anti-Symmetric Neural Network on NVIDIA GPU (0.10)
         """
         def __init__(
             self,
             feature_names: List[str],
-            lr_weight: float = 0.315,
-            gbdt_weight: float = 0.460,
-            gpu_pt_weight: float = 0.225,
+            lr_weight: float = 0.38,
+            gbdt_weight: float = 0.52,
+            gpu_pt_weight: float = 0.10,
             device: Optional[Union[str, torch.device]] = None,
         ):
             self.feature_names = feature_names
@@ -300,8 +300,8 @@ if TORCH_AVAILABLE:
             self.gpu_pt_weight = gpu_pt_weight
 
             self.lr_model = build_logistic_model(feature_names, C=0.5)
-            self.gbdt_model = build_hist_gbdt_model(feature_names, max_iter=150, learning_rate=0.04)
-            self.pt_model = PyTorchGPUPreferenceModel(feature_names, hidden_dim=128, epochs=25, temperature=2.8, device=device)
+            self.gbdt_model = build_hist_gbdt_model(feature_names, max_iter=150, learning_rate=0.05, min_samples_leaf=50)
+            self.pt_model = PyTorchGPUPreferenceModel(feature_names, hidden_dim=128, epochs=15, temperature=1.0, device=device)
 
         def fit(self, X: np.ndarray, y: np.ndarray) -> "TriEnsemblePreferenceModel":
             self.lr_model.fit(X, y)
@@ -328,9 +328,9 @@ if TORCH_AVAILABLE:
 
     def build_tri_ensemble_model(
         feature_names: List[str],
-        lr_weight: float = 0.315,
-        gbdt_weight: float = 0.460,
-        gpu_pt_weight: float = 0.225,
+        lr_weight: float = 0.38,
+        gbdt_weight: float = 0.52,
+        gpu_pt_weight: float = 0.10,
         device: Optional[str] = None,
     ) -> TriEnsemblePreferenceModel:
         return TriEnsemblePreferenceModel(

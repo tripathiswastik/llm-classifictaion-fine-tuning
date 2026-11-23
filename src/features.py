@@ -178,8 +178,11 @@ def compute_text_stats(text: str) -> Dict[str, float]:
         rep_rate = 1.0 - (len(set(trigrams)) / max(len(trigrams), 1))
 
     # Readability: Flesch Reading Ease
-    syl = sum(count_syllables(w) for w in words) / max(word_count, 1)
-    fre = 206.835 - 1.015 * avg_sent_len - 84.6 * syl
+    if word_count == 0:
+        fre = 0.0
+    else:
+        syl = sum(count_syllables(w) for w in words) / max(word_count, 1)
+        fre = 206.835 - 1.015 * avg_sent_len - 84.6 * syl
 
     # Code density
     code_chars = sum(len(c) for c in re.findall(r"```[\s\S]*?```", text))
@@ -236,6 +239,9 @@ def compute_pairwise_features(
     resp_b: str,
     turns_a: int = 1,
     turns_b: int = 1,
+    prompt_turns: Optional[List[str]] = None,
+    resp_a_turns: Optional[List[str]] = None,
+    resp_b_turns: Optional[List[str]] = None,
 ) -> Dict[str, float]:
     """
     Computes comparative difference and interaction features between response_a and response_b.
@@ -389,6 +395,43 @@ def compute_pairwise_features(
                 in_b = 1.0 if w_lower in b_set else 0.0
                 diff_neg_violation += (in_b - in_a)
 
+    # Multi-turn final-turn signals
+    p_tl = prompt_turns if (prompt_turns is not None and len(prompt_turns) > 0) else [prompt]
+    a_tl = resp_a_turns if (resp_a_turns is not None and len(resp_a_turns) > 0) else [resp_a]
+    b_tl = resp_b_turns if (resp_b_turns is not None and len(resp_b_turns) > 0) else [resp_b]
+
+    is_multi = 1.0 if len(p_tl) > 1 else 0.0
+    n_turns = float(len(p_tl))
+
+    final_p = p_tl[-1] if p_tl else ""
+    final_a = a_tl[-1] if a_tl else ""
+    final_b = b_tl[-1] if b_tl else ""
+
+    len_fa = float(len(final_a))
+    len_fb = float(len(final_b))
+    diff_final_len = len_fa - len_fb
+    diff_final_log_len = float(math.log(len_fa + 1.0) - math.log(len_fb + 1.0))
+    sym_final_len = len_fa + len_fb
+
+    words_fp = set(w.lower() for w in RE_WORDS.findall(final_p))
+    words_fa = set(w.lower() for w in RE_WORDS.findall(final_a))
+    words_fb = set(w.lower() for w in RE_WORDS.findall(final_b))
+    jacc_fa = len(words_fp & words_fa) / max(len(words_fp | words_fa), 1)
+    jacc_fb = len(words_fp & words_fb) / max(len(words_fp | words_fb), 1)
+    diff_final_jacc = float(jacc_fa - jacc_fb)
+    sym_final_jacc = 0.5 * float(jacc_fa + jacc_fb)
+
+    # Non-linear length ratio cliffs
+    len_a = float(stats_a["char_len"])
+    len_b = float(stats_b["char_len"])
+    ratio_15 = float(len_a > 1.5 * len_b) - float(len_b > 1.5 * len_a)
+    ratio_20 = float(len_a > 2.0 * len_b) - float(len_b > 2.0 * len_a)
+    ratio_30 = float(len_a > 3.0 * len_b) - float(len_b > 3.0 * len_a)
+    sym_extreme_len_imbalance = float((len_a > 2.0 * len_b) or (len_b > 2.0 * len_a))
+
+    # Exact match indicator
+    is_exact = float(resp_a.strip() == resp_b.strip())
+
     features: Dict[str, float] = {
         # Anti-symmetric difference features
         "diff_char_len": char_diff,
@@ -438,6 +481,12 @@ def compute_pairwise_features(
         "diff_para": diff_para,
         "diff_steps": diff_steps,
         "diff_neg_violation": diff_neg_violation,
+        "diff_final_len": diff_final_len,
+        "diff_final_log_len": diff_final_log_len,
+        "diff_final_jacc": diff_final_jacc,
+        "diff_len_ratio_15": ratio_15,
+        "diff_len_ratio_20": ratio_20,
+        "diff_len_ratio_30": ratio_30,
         # Symmetric tie & similarity features
         "sym_jaccard_ab": jaccard_ab,
         "sym_abs_char_diff": char_len_ab_diff,
@@ -466,6 +515,12 @@ def compute_pairwise_features(
         "sym_connectives": sym_connectives,
         "sym_para": sym_para,
         "sym_steps": sym_steps,
+        "sym_final_len": sym_final_len,
+        "sym_final_jacc": sym_final_jacc,
+        "sym_is_multi_turn": is_multi,
+        "sym_num_turns": n_turns,
+        "sym_extreme_len_imbalance": sym_extreme_len_imbalance,
+        "sym_is_exact_match": is_exact,
     }
     return features
 
@@ -587,11 +642,17 @@ class FeatureExtractor:
         p_texts = df["prompt_text"].values
         a_texts = df["response_a_text"].values
         b_texts = df["response_b_text"].values
-        a_turns = [len(t) for t in df["response_a_turns"].values]
-        b_turns = [len(t) for t in df["response_b_turns"].values]
+        p_turns = df["prompt_turns"].values if "prompt_turns" in df.columns else None
+        a_turns = df["response_a_turns"].values if "response_a_turns" in df.columns else None
+        b_turns = df["response_b_turns"].values if "response_b_turns" in df.columns else None
 
-        for p, a, b, ta, tb in zip(p_texts, a_texts, b_texts, a_turns, b_turns):
-            feat_dict = compute_pairwise_features(p, a, b, ta, tb)
+        for i, (p, a, b) in enumerate(zip(p_texts, a_texts, b_texts)):
+            ptl = p_turns[i] if p_turns is not None else None
+            atl = a_turns[i] if a_turns is not None else None
+            btl = b_turns[i] if b_turns is not None else None
+            ta = len(atl) if atl is not None else 1
+            tb = len(btl) if btl is not None else 1
+            feat_dict = compute_pairwise_features(p, a, b, ta, tb, ptl, atl, btl)
             rows.append([feat_dict[k] for k in self.base_feature_names_])
 
         X_base = np.asarray(rows, dtype=np.float32)
