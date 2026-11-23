@@ -31,7 +31,9 @@ test_calibration.test_temperature_calibrator_anti_symmetry()
 test_calibration.test_temperature_calibrator_monotonic_loss()
 test_calibration.test_dirichlet_calibrator_anti_symmetry()
 test_calibration.test_dirichlet_calibrator_monotonic_loss()
-print("  [PASS] test_calibration.py (4/4)")
+test_calibration.test_margin_coupled_dirichlet_calibrator_anti_symmetry()
+test_calibration.test_margin_coupled_dirichlet_calibrator_monotonic_loss()
+print("  [PASS] test_calibration.py (6/6)")
 
 # 3. Submission Format Tests
 test_submission_format.test_submission_schema_and_simplex()
@@ -48,5 +50,5 @@ test_symmetry.test_ensemble_anti_symmetry_property()
 print("  [PASS] test_symmetry.py (2/2)")
 
 print("\n" + "=" * 60)
-print(">>> ALL 13/13 UNIT TESTS PASSED WITH 100% INVARIANT CONFORMANCE <<<")
+print(">>> ALL 15/15 UNIT TESTS PASSED WITH 100% INVARIANT CONFORMANCE <<<")
 print("=" * 60)

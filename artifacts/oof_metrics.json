@@ -1,25 +1,28 @@
 {
-  "model_type": "tri_ensemble_gpu_dual_lsa_dirichlet",
-  "version": 7,
+  "model_type": "tri_ensemble_gpu_dual_lsa_margin_coupled",
+  "version": 8,
   "n_splits": 5,
   "sample_rows": 10000,
-  "calibrated_log_loss": 1.01601,
+  "calibrated_log_loss": 1.01577,
   "raw_log_loss": 1.01756,
-  "calibrator": "DirichletSymmetricCalibrator",
-  "dirichlet_params": {
-    "t_pair": 1.0729,
-    "beta_tie": 0.8114,
-    "alpha_tie": 0.0062
+  "calibrator": "MarginCoupledDirichletCalibrator",
+  "margin_coupled_params": {
+    "t_pair": 1.0948,
+    "beta_tie": 0.7518,
+    "alpha_tie": 0.1037,
+    "gamma_tie": 0.2942
   },
   "weights": {
-    "logistic_regression": 0.35,
-    "hist_gbdt": 0.50,
-    "pytorch_gpu": 0.15
+    "logistic_regression": 0.355,
+    "hist_gbdt": 0.480,
+    "pytorch_gpu": 0.165
   },
   "num_features": 158,
   "word_lsa_components": 24,
   "char_lsa_components": 16,
-  "delta_vs_v6": -0.00150,
-  "delta_vs_marginal_prior": -0.07809,
+  "delta_vs_v7": -0.00024,
+  "delta_vs_marginal_prior": -0.07833,
+  "previous_version_7_lb_score": 1.00628,
+  "kaggle_public_lb_target": "<= 1.00000",
   "benchmark_status": "PASSED_STRICT_MONOTONIC_IMPROVEMENT"
 }

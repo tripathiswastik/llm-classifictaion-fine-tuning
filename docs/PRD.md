@@ -82,4 +82,10 @@
   - Total feature space: 158 anti-symmetric features.
   - 10k CV Log Loss: **`1.01601`** (Projected Kaggle Public LB $\le \mathbf{1.00000}$).
   - 13/13 unit tests passing (100% success rate).
-  - Version 7 notebook verified and ready for execution.
+  - Version 7 Kaggle Public Leaderboard: **`1.00628`** ($\Delta = -0.00535$ vs Version 5 `1.01163`). Within **`0.00628`** of $\le 1.00000$ target!
+- **[x] Phase 8: Margin-Coupled Symmetric Calibrator & Optimal Blend (Version 8)**:
+  - Formulated and verified 4-parameter Margin-Coupled Symmetric Dirichlet Calibrator coupling head-to-head decisiveness margin $\frac{|z_{AB}|}{1 + |z_{AB}|}$ to tie probability log-odds ($T_{\text{pair}}=1.0948, \beta_{\text{tie}}=0.7518, \alpha_{\text{tie}}=0.1037, \gamma_{\text{tie}}=0.2942$).
+  - Analytically solved joint optimization on 10k OOF predictions: strictly reduced CV log loss to **`1.01577`** ($\Delta = -0.00024$ over Version 7 champion `1.01601`).
+  - Tuned tri-ensemble weights: $0.355 \text{ LR} + 0.480 \text{ HistGBDT} + 0.165 \text{ PyTorch GPU}$.
+  - Passed 15/15 comprehensive unit tests (100% pass rate).
+  - Generated and verified Version 8 self-contained notebook targeting $\le \mathbf{1.00000}$ Kaggle Public LB.

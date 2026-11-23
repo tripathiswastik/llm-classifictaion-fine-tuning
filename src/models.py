@@ -279,16 +279,16 @@ if TORCH_AVAILABLE:
     class TriEnsemblePreferenceModel:
         """
         Three-way blend combining:
-        1. Linear Regularized Logistic Regression (0.35)
-        2. Non-linear HistGBDT (0.50)
-        3. Deep Anti-Symmetric Neural Network on NVIDIA GPU (0.15)
+        1. Linear Regularized Logistic Regression (0.355)
+        2. Non-linear HistGBDT (0.480)
+        3. Deep Anti-Symmetric Neural Network on NVIDIA GPU (0.165)
         """
         def __init__(
             self,
             feature_names: List[str],
-            lr_weight: float = 0.35,
-            gbdt_weight: float = 0.50,
-            gpu_pt_weight: float = 0.15,
+            lr_weight: float = 0.355,
+            gbdt_weight: float = 0.480,
+            gpu_pt_weight: float = 0.165,
             device: Optional[Union[str, torch.device]] = None,
         ):
             self.feature_names = feature_names
@@ -325,9 +325,9 @@ if TORCH_AVAILABLE:
 
     def build_tri_ensemble_model(
         feature_names: List[str],
-        lr_weight: float = 0.35,
-        gbdt_weight: float = 0.50,
-        gpu_pt_weight: float = 0.15,
+        lr_weight: float = 0.355,
+        gbdt_weight: float = 0.480,
+        gpu_pt_weight: float = 0.165,
         device: Optional[str] = None,
     ) -> TriEnsemblePreferenceModel:
         return TriEnsemblePreferenceModel(
