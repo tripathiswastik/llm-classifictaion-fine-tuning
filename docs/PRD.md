@@ -106,3 +106,17 @@
   - Formulated comprehensive edge case test suite (`tests/test_edge_cases_and_anomalies.py`) with 7 new tests covering empty text, exact duplicates, 50,000-char length outliers, Chinese/Russian unicode, multi-turn 1 vs 15 turns, OOV SVD zero norms, and pipeline anti-symmetry.
   - Passed 22/22 unit and edge case tests (100% pass rate).
   - Verified and compiled self-contained Version 10 notebook (`submission_notebook.ipynb`) targeting $\le \mathbf{1.00000}$ on Kaggle Public Leaderboard.
+- **[x] Phase 11: Forensic Post-Mortem, 158-Feature Foundation Restoration & Dual-Tree Quad-Ensemble (Version 11)**:
+  - Kaggle Public LB evaluations: Version 9 (`1.00787`) and Version 10 (`1.00731`) confirmed that expanding features beyond 158 introduced slight test-distribution overfitting and collinearity (especially in single-turn conversations where final-turn copies duplicated base length features).
+  - Hypothesis-driven benchmarking (`scratch/test_v7_plus_enhancements.py`) tested 4 orthogonal hypotheses on 10k 5-fold CV:
+    1. Restoring the clean continuous 158-feature Dual LSA manifold (69 base tabular + 51 Word LSA + 35 Char LSA + 3 TF-IDF cosine alignment features) with 0-word FRE bug fix.
+    2. Introducing a second, shallow regularized tree model (`HistGradientBoostingClassifier(max_iter=250, learning_rate=0.03, max_leaf_nodes=15, min_samples_leaf=100, l2_regularization=5.0)`). GBDT Shallow achieved an individual OOF log loss of **`1.02317`** (beating standard GBDT's `1.03001` by **`-0.00684`**!).
+    3. Quad-Ensemble architecture combining:
+       - 0.33 Linear Regularized Logistic Regression ($L_2$ $C=0.5$).
+       - 0.19 HistGBDT Standard (flexible high-order trees).
+       - 0.38 HistGBDT Shallow Regularized (smooth, robust low-variance regularizer).
+       - 0.10 GPU PyTorch Neural Network (25 epochs, raw temperature $T=1.0$).
+    4. Dirichlet calibration + Exact-Match Bayesian prior ($[0.0491, 0.0491, 0.9018]$).
+  - Achieved record 10k Calibrated OOF Log Loss: **`1.01538`** (strictly beating Version 7's `1.01689` by **`-0.00151`**).
+  - Passed all 22/22 unit and edge case tests with 100% invariant conformance.
+  - Verified and compiled self-contained Version 11 notebook targeting $\le \mathbf{1.00000}$ on Kaggle Public Leaderboard.

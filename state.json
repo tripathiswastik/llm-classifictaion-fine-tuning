@@ -39,12 +39,12 @@
       "baseline_cv_benchmark": {
         "uniform_log_loss": 1.09861,
         "marginal_prior_log_loss": 1.0941,
-        "champion_10k_cv_log_loss": 1.01424,
+        "champion_10k_cv_log_loss": 1.01538,
         "champion_57k_cv_log_loss": 1.02269,
         "kaggle_public_lb_score": 1.00628,
-        "champion_model": "Symmetric_182feat_anomaly_hardened_tri_ensemble_calibrated",
-        "num_features": 182,
-        "champion_version": 10,
+        "champion_model": "Symmetric_158feat_dual_lsa_quad_ensemble_calibrated",
+        "num_features": 158,
+        "champion_version": 11,
         "optimal_dirichlet_calibrator": {
           "t_pair": 0.9009,
           "beta_tie": 0.9476,

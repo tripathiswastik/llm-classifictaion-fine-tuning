@@ -1,10 +1,24 @@
 import math
+import os
+import sys
 import numpy as np
 import pandas as pd
 import pytest
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC_DIR = os.path.join(BASE_DIR, "src")
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
+
 from features import FeatureExtractor, compute_text_stats, compute_pairwise_features
-from models import build_logistic_model, build_hist_gbdt_model, PyTorchGPUPreferenceModel, TriEnsemblePreferenceModel
+from models import (
+    build_logistic_model,
+    build_hist_gbdt_model,
+    build_shallow_hist_gbdt_model,
+    PyTorchGPUPreferenceModel,
+    TriEnsemblePreferenceModel,
+    QuadEnsemblePreferenceModel,
+)
 from calibration import DirichletSymmetricCalibrator
 
 def test_empty_and_whitespace_responses():
@@ -40,8 +54,7 @@ def test_exact_identical_response_anomaly():
     # Differences must be strictly 0.0
     assert feat["diff_char_len"] == 0.0
     assert feat["diff_word_count"] == 0.0
-    assert feat["diff_final_len"] == 0.0
-    assert feat["sym_is_exact_match"] == 1.0
+    assert feat["diff_log_char"] == 0.0
     assert feat["sym_jaccard_ab"] == 1.0
 
 
@@ -55,8 +68,8 @@ def test_extreme_length_outlier():
         resp_a=massive_text,
         resp_b=short_text,
     )
-    assert feat["diff_len_ratio_30"] == 1.0
-    assert feat["sym_extreme_len_imbalance"] == 1.0
+    assert feat["diff_log_char"] > 5.0
+    assert feat["sym_abs_char_diff"] > 50000.0
     assert not math.isnan(feat["diff_log_char"])
     assert not math.isinf(feat["diff_log_char"])
 
@@ -87,13 +100,12 @@ def test_multi_turn_edge_cases():
         prompt=" \n\n ".join(p_turns_15),
         resp_a=" \n\n ".join(a_turns_15),
         resp_b=" \n\n ".join(b_turns_15),
-        prompt_turns=p_turns_15,
-        resp_a_turns=a_turns_15,
-        resp_b_turns=b_turns_15,
+        turns_a=15,
+        turns_b=15,
     )
-    assert feat["sym_is_multi_turn"] == 1.0
-    assert feat["sym_num_turns"] == 15.0
-    assert feat["diff_final_len"] == len("Answer A 14.") - len("Answer B 14.")
+    assert feat["diff_char_len"] == len(" \n\n ".join(a_turns_15)) - len(" \n\n ".join(b_turns_15))
+    assert not math.isnan(feat["diff_turns"])
+    assert feat["diff_turns"] == 0.0
 
 
 def test_out_of_vocabulary_lsa_zero_norm():
@@ -138,7 +150,7 @@ def test_full_pipeline_anti_symmetry_and_simplex_on_edge_cases():
     X_train = extractor.fit_transform(df_train)
     y_train = df_train["target_label"].values
 
-    model = TriEnsemblePreferenceModel(extractor.feature_names_, lr_weight=0.38, gbdt_weight=0.52, gpu_pt_weight=0.10)
+    model = QuadEnsemblePreferenceModel(extractor.feature_names_)
     model.fit(X_train, y_train)
 
     # Edge case sample

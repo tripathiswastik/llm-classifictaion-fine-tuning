@@ -155,6 +155,26 @@ def build_hist_gbdt_model(
     return SymmetricModelWrapper(clf, feature_names)
 
 
+def build_shallow_hist_gbdt_model(
+    feature_names: List[str],
+    max_iter: int = 250,
+    learning_rate: float = 0.03,
+    max_leaf_nodes: int = 15,
+    min_samples_leaf: int = 100,
+    l2_regularization: float = 5.0,
+) -> SymmetricModelWrapper:
+    clf = HistGradientBoostingClassifier(
+        loss=get_hist_gbdt_loss(),
+        max_iter=max_iter,
+        learning_rate=learning_rate,
+        max_leaf_nodes=max_leaf_nodes,
+        min_samples_leaf=min_samples_leaf,
+        l2_regularization=l2_regularization,
+        random_state=42,
+    )
+    return SymmetricModelWrapper(clf, feature_names)
+
+
 def build_ensemble_model(feature_names: List[str], lr_weight: float = 0.44) -> EnsemblePreferenceModel:
     return EnsemblePreferenceModel(feature_names, lr_weight=lr_weight)
 
@@ -202,7 +222,7 @@ if TORCH_AVAILABLE:
             feature_names: List[str],
             hidden_dim: int = 128,
             lr: float = 2e-3,
-            epochs: int = 15,
+            epochs: int = 25,
             batch_size: int = 256,
             temperature: float = 1.0,
             device: Optional[Union[str, torch.device]] = None,
@@ -279,19 +299,75 @@ if TORCH_AVAILABLE:
             return probs
 
 
-    class TriEnsemblePreferenceModel:
+    class QuadEnsemblePreferenceModel:
         """
-        Three-way blend combining:
-        1. Linear Regularized Logistic Regression (0.38)
-        2. Non-linear HistGBDT (0.52)
-        3. Deep Anti-Symmetric Neural Network on NVIDIA GPU (0.10)
+        Four-way champion blend combining:
+        1. Linear Regularized Logistic Regression (0.33)
+        2. Non-linear Standard HistGBDT (0.19)
+        3. Shallow Robust Regularized HistGBDT (0.38)
+        4. Deep Anti-Symmetric Neural Network on NVIDIA GPU (0.10)
         """
         def __init__(
             self,
             feature_names: List[str],
-            lr_weight: float = 0.38,
-            gbdt_weight: float = 0.52,
+            lr_weight: float = 0.33,
+            gbdt_std_weight: float = 0.19,
+            gbdt_shallow_weight: float = 0.38,
             gpu_pt_weight: float = 0.10,
+            device: Optional[Union[str, torch.device]] = None,
+        ):
+            self.feature_names = feature_names
+            self.lr_weight = lr_weight
+            self.gbdt_std_weight = gbdt_std_weight
+            self.gbdt_shallow_weight = gbdt_shallow_weight
+            self.gpu_pt_weight = gpu_pt_weight
+
+            self.lr_model = build_logistic_model(feature_names, C=0.5)
+            self.gbdt_std_model = build_hist_gbdt_model(
+                feature_names, max_iter=150, learning_rate=0.05, max_leaf_nodes=31, min_samples_leaf=50
+            )
+            self.gbdt_shallow_model = build_shallow_hist_gbdt_model(
+                feature_names, max_iter=250, learning_rate=0.03, max_leaf_nodes=15, min_samples_leaf=100, l2_regularization=5.0
+            )
+            self.pt_model = PyTorchGPUPreferenceModel(
+                feature_names, hidden_dim=128, epochs=25, temperature=1.0, device=device
+            )
+
+        def fit(self, X: np.ndarray, y: np.ndarray) -> "QuadEnsemblePreferenceModel":
+            self.lr_model.fit(X, y)
+            self.gbdt_std_model.fit(X, y)
+            self.gbdt_shallow_model.fit(X, y)
+            self.pt_model.fit(X, y)
+            return self
+
+        def predict_proba(self, X: np.ndarray) -> np.ndarray:
+            p_lr = self.lr_model.predict_proba(X)
+            p_gb_std = self.gbdt_std_model.predict_proba(X)
+            p_gb_shallow = self.gbdt_shallow_model.predict_proba(X)
+            p_pt = self.pt_model.predict_proba(X)
+
+            p_blend = (
+                self.lr_weight * p_lr
+                + self.gbdt_std_weight * p_gb_std
+                + self.gbdt_shallow_weight * p_gb_shallow
+                + self.gpu_pt_weight * p_pt
+            )
+            return p_blend / p_blend.sum(axis=1, keepdims=True)
+
+
+    class TriEnsemblePreferenceModel:
+        """
+        Three-way blend combining:
+        1. Linear Regularized Logistic Regression (0.35)
+        2. Non-linear HistGBDT (0.50)
+        3. Deep Anti-Symmetric Neural Network on NVIDIA GPU (0.15)
+        """
+        def __init__(
+            self,
+            feature_names: List[str],
+            lr_weight: float = 0.35,
+            gbdt_weight: float = 0.50,
+            gpu_pt_weight: float = 0.15,
             device: Optional[Union[str, torch.device]] = None,
         ):
             self.feature_names = feature_names
@@ -301,7 +377,7 @@ if TORCH_AVAILABLE:
 
             self.lr_model = build_logistic_model(feature_names, C=0.5)
             self.gbdt_model = build_hist_gbdt_model(feature_names, max_iter=150, learning_rate=0.05, min_samples_leaf=50)
-            self.pt_model = PyTorchGPUPreferenceModel(feature_names, hidden_dim=128, epochs=15, temperature=1.0, device=device)
+            self.pt_model = PyTorchGPUPreferenceModel(feature_names, hidden_dim=128, epochs=25, temperature=1.0, device=device)
 
         def fit(self, X: np.ndarray, y: np.ndarray) -> "TriEnsemblePreferenceModel":
             self.lr_model.fit(X, y)
@@ -326,11 +402,29 @@ if TORCH_AVAILABLE:
         return PyTorchGPUPreferenceModel(feature_names, device=device)
 
 
+    def build_quad_ensemble_model(
+        feature_names: List[str],
+        lr_weight: float = 0.33,
+        gbdt_std_weight: float = 0.19,
+        gbdt_shallow_weight: float = 0.38,
+        gpu_pt_weight: float = 0.10,
+        device: Optional[str] = None,
+    ) -> QuadEnsemblePreferenceModel:
+        return QuadEnsemblePreferenceModel(
+            feature_names,
+            lr_weight=lr_weight,
+            gbdt_std_weight=gbdt_std_weight,
+            gbdt_shallow_weight=gbdt_shallow_weight,
+            gpu_pt_weight=gpu_pt_weight,
+            device=device,
+        )
+
+
     def build_tri_ensemble_model(
         feature_names: List[str],
-        lr_weight: float = 0.38,
-        gbdt_weight: float = 0.52,
-        gpu_pt_weight: float = 0.10,
+        lr_weight: float = 0.35,
+        gbdt_weight: float = 0.50,
+        gpu_pt_weight: float = 0.15,
         device: Optional[str] = None,
     ) -> TriEnsemblePreferenceModel:
         return TriEnsemblePreferenceModel(
