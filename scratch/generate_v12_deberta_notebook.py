@@ -396,6 +396,10 @@ val_loader_swap = DataLoader(val_dataset_swap, batch_size=BATCH_SIZE * 2, shuffl
 
 # Model Initialization
 model = DebertaPreferenceClassifier(MODEL_PATH, num_labels=3).to(DEVICE)
+for param in model.parameters():
+    if param.requires_grad:
+        param.data = param.data.float()
+
 if torch.cuda.device_count() > 1:
     print(f"Using {torch.cuda.device_count()} GPUs with DataParallel!")
     model = nn.DataParallel(model)
@@ -404,7 +408,6 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DEC
 total_steps = (len(train_loader) // GRAD_ACCUM_STEPS) * EPOCHS
 warmup_steps = int(0.1 * total_steps)
 scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
-scaler = torch.cuda.amp.GradScaler()
 loss_fn = nn.CrossEntropyLoss(label_smoothing=LABEL_SMOOTHING)
 
 print(f"\\n--- Starting DeBERTa-v3 Fine-Tuning ({EPOCHS} Epochs, Total Steps: {total_steps}) ---")
@@ -426,12 +429,12 @@ for epoch in range(EPOCHS):
             loss = outputs.loss if hasattr(outputs, "loss") and outputs.loss is not None else loss_fn(outputs.logits, labels)
             loss = loss.mean() / GRAD_ACCUM_STEPS
 
-        scaler.scale(loss).backward()
+        loss.backward()
         running_loss += loss.item() * GRAD_ACCUM_STEPS
 
         if (step + 1) % GRAD_ACCUM_STEPS == 0 or (step + 1) == len(train_loader):
-            scaler.step(optimizer)
-            scaler.update()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
             optimizer.zero_grad()
             scheduler.step()
 
