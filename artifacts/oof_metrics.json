@@ -1,0 +1,25 @@
+{
+  "model_type": "tri_ensemble_gpu_dual_lsa_dirichlet",
+  "version": 7,
+  "n_splits": 5,
+  "sample_rows": 10000,
+  "calibrated_log_loss": 1.01601,
+  "raw_log_loss": 1.01756,
+  "calibrator": "DirichletSymmetricCalibrator",
+  "dirichlet_params": {
+    "t_pair": 1.0729,
+    "beta_tie": 0.8114,
+    "alpha_tie": 0.0062
+  },
+  "weights": {
+    "logistic_regression": 0.35,
+    "hist_gbdt": 0.50,
+    "pytorch_gpu": 0.15
+  },
+  "num_features": 158,
+  "word_lsa_components": 24,
+  "char_lsa_components": 16,
+  "delta_vs_v6": -0.00150,
+  "delta_vs_marginal_prior": -0.07809,
+  "benchmark_status": "PASSED_STRICT_MONOTONIC_IMPROVEMENT"
+}
