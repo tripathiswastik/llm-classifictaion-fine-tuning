@@ -43,6 +43,9 @@ RE_CONNECTIVES = re.compile(
     r"\b(furthermore|moreover|therefore|however|nevertheless|consequently|specifically|in particular|for instance|for example|in summary|in conclusion)\b",
     re.IGNORECASE,
 )
+RE_STEP = re.compile(r"(?:^|\n)\s*(?:step\s*\d+|\d+\.)\s+", re.IGNORECASE)
+RE_PARAGRAPHS = re.compile(r"\n\s*\n")
+RE_NEG_PROMPT = re.compile(r"\b(do not|don't|never|avoid|without|no|must not)\s+(\w+)", re.IGNORECASE)
 
 RE_UPPER = re.compile(r"[A-Z]")
 RE_DIGIT = re.compile(r"[0-9]")
@@ -364,6 +367,28 @@ def compute_pairwise_features(
     diff_connectives = conn_a - conn_b
     sym_connectives = 0.5 * (conn_a + conn_b)
 
+    # Structural Paragraphs & Step Progression
+    para_a = float(len(RE_PARAGRAPHS.findall(resp_a)))
+    para_b = float(len(RE_PARAGRAPHS.findall(resp_b)))
+    diff_para = para_a - para_b
+    sym_para = para_a + para_b
+
+    steps_a = float(len(RE_STEP.findall(resp_a)))
+    steps_b = float(len(RE_STEP.findall(resp_b)))
+    diff_steps = steps_a - steps_b
+    sym_steps = steps_a + steps_b
+
+    # Negative Prompt Constraint Adherence
+    neg_matches = RE_NEG_PROMPT.findall(prompt)
+    diff_neg_violation = 0.0
+    if neg_matches:
+        for _, forbidden_word in neg_matches:
+            w_lower = forbidden_word.lower()
+            if len(w_lower) >= 3:
+                in_a = 1.0 if w_lower in a_set else 0.0
+                in_b = 1.0 if w_lower in b_set else 0.0
+                diff_neg_violation += (in_b - in_a)
+
     features: Dict[str, float] = {
         # Anti-symmetric difference features
         "diff_char_len": char_diff,
@@ -410,6 +435,9 @@ def compute_pairwise_features(
         "diff_compression_ratio": diff_cr,
         "diff_bigram_cov": diff_bigram_cov,
         "diff_connectives": diff_connectives,
+        "diff_para": diff_para,
+        "diff_steps": diff_steps,
+        "diff_neg_violation": diff_neg_violation,
         # Symmetric tie & similarity features
         "sym_jaccard_ab": jaccard_ab,
         "sym_abs_char_diff": char_len_ab_diff,
@@ -436,6 +464,8 @@ def compute_pairwise_features(
         "sym_mean_compression_ratio": sym_mean_cr,
         "sym_mean_bigram_cov": sym_mean_bigram_cov,
         "sym_connectives": sym_connectives,
+        "sym_para": sym_para,
+        "sym_steps": sym_steps,
     }
     return features
 
@@ -509,6 +539,10 @@ class FeatureExtractor:
                     "diff_lsa_prompt_cos",
                     "sym_lsa_ab_cos",
                     "sym_lsa_mean_prompt_cos",
+                    "diff_lsa_norm",
+                    "sym_lsa_norm",
+                    "sym_lsa_dist_ab",
+                    "diff_lsa_dist_p",
                 ]
                 for i in range(self.n_lsa_components):
                     self.lsa_feature_names_.append(f"diff_lsa_dim_{i}")
@@ -532,6 +566,9 @@ class FeatureExtractor:
                     "diff_char_lsa_prompt_cos",
                     "sym_char_lsa_ab_cos",
                     "sym_char_lsa_mean_prompt_cos",
+                    "diff_char_lsa_norm",
+                    "sym_char_lsa_norm",
+                    "sym_char_lsa_dist_ab",
                 ]
                 for i in range(self.n_char_lsa_components):
                     self.char_lsa_feature_names_.append(f"diff_char_lsa_dim_{i}")
@@ -604,6 +641,17 @@ class FeatureExtractor:
                 sym_cos_ab = cos_ab.astype(np.float32)
                 sym_mean_cos_p = (0.5 * (cos_pa + cos_pb)).astype(np.float32)
 
+                # LSA Norms and Distances
+                norm_a = np.linalg.norm(a_svd, axis=1, keepdims=True)
+                norm_b = np.linalg.norm(b_svd, axis=1, keepdims=True)
+                diff_lsa_norm = (norm_a - norm_b).astype(np.float32)
+                sym_lsa_norm = (0.5 * (norm_a + norm_b)).astype(np.float32)
+
+                dist_ab = np.linalg.norm(a_svd - b_svd, axis=1, keepdims=True).astype(np.float32)
+                dist_pa = np.linalg.norm(p_svd - a_svd, axis=1, keepdims=True)
+                dist_pb = np.linalg.norm(p_svd - b_svd, axis=1, keepdims=True)
+                diff_dist_p = (dist_pb - dist_pa).astype(np.float32)
+
                 diff_svd = (a_svd - b_svd).astype(np.float32)
                 sym_svd = (0.5 * (a_svd + b_svd)).astype(np.float32)
 
@@ -612,7 +660,7 @@ class FeatureExtractor:
                     dim_cols.append(diff_svd[:, i : i + 1])
                     dim_cols.append(sym_svd[:, i : i + 1])
 
-                X_lsa = np.hstack([diff_cos_p, sym_cos_ab, sym_mean_cos_p] + dim_cols)
+                X_lsa = np.hstack([diff_cos_p, sym_cos_ab, sym_mean_cos_p, diff_lsa_norm, sym_lsa_norm, dist_ab, diff_dist_p] + dim_cols)
                 parts = [X_base, X_tfidf, X_lsa]
             else:
                 parts = [X_base, X_tfidf]
@@ -649,6 +697,13 @@ class FeatureExtractor:
                 sym_cos_cab = cos_cab.astype(np.float32)
                 sym_mean_cos_cp = (0.5 * (cos_cpa + cos_cpb)).astype(np.float32)
 
+                # Char LSA Norms and Distances
+                cnorm_a = np.linalg.norm(a_csvd, axis=1, keepdims=True)
+                cnorm_b = np.linalg.norm(b_csvd, axis=1, keepdims=True)
+                diff_char_norm = (cnorm_a - cnorm_b).astype(np.float32)
+                sym_char_norm = (0.5 * (cnorm_a + cnorm_b)).astype(np.float32)
+                cdist_ab = np.linalg.norm(a_csvd - b_csvd, axis=1, keepdims=True).astype(np.float32)
+
                 diff_csvd = (a_csvd - b_csvd).astype(np.float32)
                 sym_csvd = (0.5 * (a_csvd + b_csvd)).astype(np.float32)
 
@@ -657,7 +712,7 @@ class FeatureExtractor:
                     dim_char_cols.append(diff_csvd[:, i : i + 1])
                     dim_char_cols.append(sym_csvd[:, i : i + 1])
 
-                X_char_lsa = np.hstack([diff_cos_cp, sym_cos_cab, sym_mean_cos_cp] + dim_char_cols)
+                X_char_lsa = np.hstack([diff_cos_cp, sym_cos_cab, sym_mean_cos_cp, diff_char_norm, sym_char_norm, cdist_ab] + dim_char_cols)
                 parts.append(X_char_lsa)
 
             return np.hstack(parts)

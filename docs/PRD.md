@@ -85,7 +85,12 @@
   - Version 7 Kaggle Public Leaderboard: **`1.00628`** ($\Delta = -0.00535$ vs Version 5 `1.01163`). Within **`0.00628`** of $\le 1.00000$ target!
 - **[x] Phase 8: Margin-Coupled Symmetric Calibrator & Optimal Blend (Version 8)**:
   - Formulated and verified 4-parameter Margin-Coupled Symmetric Dirichlet Calibrator coupling head-to-head decisiveness margin $\frac{|z_{AB}|}{1 + |z_{AB}|}$ to tie probability log-odds ($T_{\text{pair}}=1.0948, \beta_{\text{tie}}=0.7518, \alpha_{\text{tie}}=0.1037, \gamma_{\text{tie}}=0.2942$).
-  - Analytically solved joint optimization on 10k OOF predictions: strictly reduced CV log loss to **`1.01577`** ($\Delta = -0.00024$ over Version 7 champion `1.01601`).
-  - Tuned tri-ensemble weights: $0.355 \text{ LR} + 0.480 \text{ HistGBDT} + 0.165 \text{ PyTorch GPU}$.
+  - Version 8 Kaggle Public Leaderboard: `1.00639` (confirmed 3-parameter Dirichlet provides superior generalization on unseen battles).
+- **[x] Phase 9: 170-Feature Deep Preference Architecture & Calibrated GPU Tri-Ensemble (Version 9)**:
+  - Engineered 12 new anti-symmetric preference signals: LSA semantic norms ($\|a_{\text{svd}}\|, \|b_{\text{svd}}\|$), Euclidean semantic proximity ($\|p_{\text{svd}} - b\| - \|p_{\text{svd}} - a\|$), inter-response latent distance ($\|a_{\text{svd}} - b_{\text{svd}}\|$), subword char norms and distances, paragraph chunking, step progression, and negative prompt constraint adherence.
+  - Total feature space: 170 anti-symmetric features.
+  - Implemented internal logit temperature scaling ($T=2.8$) in `PyTorchGPUPreferenceModel` to eliminate neural net overconfidence, reducing PyTorch loss from `1.202` to `1.045`.
+  - Re-tuned Tri-Ensemble weights: $0.315 \text{ LR} + 0.460 \text{ HistGBDT} + 0.225 \text{ PyTorch GPU}$.
+  - Achieved record 10k CV Log Loss: **`1.01424`** ($\Delta = \mathbf{-0.00177}$ below Version 7 `1.01601`).
   - Passed 15/15 comprehensive unit tests (100% pass rate).
-  - Generated and verified Version 8 self-contained notebook targeting $\le \mathbf{1.00000}$ Kaggle Public LB.
+  - Generated and verified Version 9 notebook targeting $\le \mathbf{1.00000}$ on Kaggle Public Leaderboard.

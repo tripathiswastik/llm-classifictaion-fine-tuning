@@ -140,9 +140,9 @@ def build_logistic_model(feature_names: List[str], C: float = 1.0) -> SymmetricM
 def build_hist_gbdt_model(
     feature_names: List[str],
     max_iter: int = 150,
-    learning_rate: float = 0.05,
+    learning_rate: float = 0.04,
     max_leaf_nodes: int = 31,
-    min_samples_leaf: int = 50,
+    min_samples_leaf: int = 45,
 ) -> SymmetricModelWrapper:
     clf = HistGradientBoostingClassifier(
         loss=get_hist_gbdt_loss(),
@@ -204,6 +204,7 @@ if TORCH_AVAILABLE:
             lr: float = 2e-3,
             epochs: int = 25,
             batch_size: int = 256,
+            temperature: float = 2.8,
             device: Optional[Union[str, torch.device]] = None,
         ):
             self.feature_names = feature_names
@@ -211,6 +212,7 @@ if TORCH_AVAILABLE:
             self.lr = lr
             self.epochs = epochs
             self.batch_size = batch_size
+            self.temperature = float(temperature)
 
             if device is None:
                 self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -270,7 +272,8 @@ if TORCH_AVAILABLE:
 
             with torch.no_grad():
                 logits = self.model(X_norm, X_swap_norm)
-                probs = torch.softmax(logits, dim=1).cpu().numpy()
+                scaled_logits = logits / max(self.temperature, 0.1)
+                probs = torch.softmax(scaled_logits, dim=1).cpu().numpy()
 
             probs = probs / probs.sum(axis=1, keepdims=True)
             return probs
@@ -279,16 +282,16 @@ if TORCH_AVAILABLE:
     class TriEnsemblePreferenceModel:
         """
         Three-way blend combining:
-        1. Linear Regularized Logistic Regression (0.355)
-        2. Non-linear HistGBDT (0.480)
-        3. Deep Anti-Symmetric Neural Network on NVIDIA GPU (0.165)
+        1. Linear Regularized Logistic Regression (0.315)
+        2. Non-linear HistGBDT (0.460)
+        3. Deep Anti-Symmetric Neural Network on NVIDIA GPU (0.225)
         """
         def __init__(
             self,
             feature_names: List[str],
-            lr_weight: float = 0.355,
-            gbdt_weight: float = 0.480,
-            gpu_pt_weight: float = 0.165,
+            lr_weight: float = 0.315,
+            gbdt_weight: float = 0.460,
+            gpu_pt_weight: float = 0.225,
             device: Optional[Union[str, torch.device]] = None,
         ):
             self.feature_names = feature_names
@@ -297,8 +300,8 @@ if TORCH_AVAILABLE:
             self.gpu_pt_weight = gpu_pt_weight
 
             self.lr_model = build_logistic_model(feature_names, C=0.5)
-            self.gbdt_model = build_hist_gbdt_model(feature_names, max_iter=150, learning_rate=0.05)
-            self.pt_model = PyTorchGPUPreferenceModel(feature_names, hidden_dim=128, epochs=25, device=device)
+            self.gbdt_model = build_hist_gbdt_model(feature_names, max_iter=150, learning_rate=0.04)
+            self.pt_model = PyTorchGPUPreferenceModel(feature_names, hidden_dim=128, epochs=25, temperature=2.8, device=device)
 
         def fit(self, X: np.ndarray, y: np.ndarray) -> "TriEnsemblePreferenceModel":
             self.lr_model.fit(X, y)
@@ -325,9 +328,9 @@ if TORCH_AVAILABLE:
 
     def build_tri_ensemble_model(
         feature_names: List[str],
-        lr_weight: float = 0.355,
-        gbdt_weight: float = 0.480,
-        gpu_pt_weight: float = 0.165,
+        lr_weight: float = 0.315,
+        gbdt_weight: float = 0.460,
+        gpu_pt_weight: float = 0.225,
         device: Optional[str] = None,
     ) -> TriEnsemblePreferenceModel:
         return TriEnsemblePreferenceModel(
