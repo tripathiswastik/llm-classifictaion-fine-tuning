@@ -424,7 +424,7 @@ for epoch in range(EPOCHS):
         with torch.cuda.amp.autocast():
             outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
             loss = outputs.loss if hasattr(outputs, "loss") and outputs.loss is not None else loss_fn(outputs.logits, labels)
-            loss = loss / GRAD_ACCUM_STEPS
+            loss = loss.mean() / GRAD_ACCUM_STEPS
 
         scaler.scale(loss).backward()
         running_loss += loss.item() * GRAD_ACCUM_STEPS
