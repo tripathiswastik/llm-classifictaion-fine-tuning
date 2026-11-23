@@ -28,3 +28,12 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Secrets, tokens, and certificates
+.env
+.env.*
+*.pem
+*.key
+*.cert
+*.pfx
+
