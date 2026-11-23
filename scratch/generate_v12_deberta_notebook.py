@@ -56,7 +56,7 @@ from scipy.optimize import minimize
 from sklearn.model_selection import StratifiedGroupKFold
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, TensorDataset
 
 # Fix protobuf Descriptors error on Windows/Linux environments
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
@@ -191,65 +191,63 @@ def load_dataset(csv_path: str, nrows: Optional[int] = None, is_test: bool = Fal
 
     return df
 
-class PreferenceDataset(Dataset):
+def prepare_tokenized_dataset(
+    df: pd.DataFrame,
+    tokenizer,
+    max_length: int = 512,
+    max_p: int = 128,
+    max_a: int = 190,
+    max_b: int = 190,
+    is_test: bool = False,
+    swap_pairs: bool = False,
+) -> TensorDataset:
     \"\"\"
-    Paired sequence dataset with balanced context truncation.
-    [CLS] Prompt: {P} [SEP] Response A: {A} [SEP] Response B: {B} [SEP]
+    Pre-tokenizes balanced sequences to eliminate truncation position bias
+    and maximize GPU throughput with zero Python multiprocessing overhead.
     \"\"\"
-    def __init__(
-        self,
-        df: pd.DataFrame,
-        tokenizer,
-        max_length: int = 512,
-        is_test: bool = False,
-        swap_pairs: bool = False,
-    ):
-        self.prompts = df["prompt_text"].values
-        self.tokenizer = tokenizer
-        self.max_length = max_length
-        self.is_test = is_test
-        self.swap_pairs = swap_pairs
+    prompts = df["prompt_text"].values
+    if not swap_pairs:
+        resp_a = df["response_a_text"].values
+        resp_b = df["response_b_text"].values
+        labels = df["target_label"].values if not is_test else None
+    else:
+        resp_a = df["response_b_text"].values
+        resp_b = df["response_a_text"].values
+        if not is_test:
+            orig = df["target_label"].values
+            swapped = orig.copy()
+            swapped[orig == 0] = 1
+            swapped[orig == 1] = 0
+            labels = swapped
 
-        if not swap_pairs:
-            self.resp_a = df["response_a_text"].values
-            self.resp_b = df["response_b_text"].values
-            if not is_test:
-                self.labels = df["target_label"].values
-        else:
-            # Swapped pairs: A <-> B
-            self.resp_a = df["response_b_text"].values
-            self.resp_b = df["response_a_text"].values
-            if not is_test:
-                orig_labels = df["target_label"].values
-                swapped_labels = orig_labels.copy()
-                swapped_labels[orig_labels == 0] = 1
-                swapped_labels[orig_labels == 1] = 0
-                self.labels = swapped_labels
+    cls_id = tokenizer.cls_token_id if tokenizer.cls_token_id is not None else 1
+    sep_id = tokenizer.sep_token_id if tokenizer.sep_token_id is not None else 2
+    pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
 
-    def __len__(self) -> int:
-        return len(self.prompts)
+    n = len(df)
+    all_ids = np.full((n, max_length), pad_id, dtype=np.int64)
+    all_masks = np.zeros((n, max_length), dtype=np.int64)
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        p = str(self.prompts[idx])
-        a = str(self.resp_a[idx])
-        b = str(self.resp_b[idx])
+    for i in range(n):
+        p_ids = tokenizer.encode(f"Prompt: {prompts[i]}", truncation=True, max_length=max_p, add_special_tokens=False)
+        a_ids = tokenizer.encode(f"Response A: {resp_a[i]}", truncation=True, max_length=max_a, add_special_tokens=False)
+        b_ids = tokenizer.encode(f"Response B: {resp_b[i]}", truncation=True, max_length=max_b, add_special_tokens=False)
 
-        # Formatted cross-encoder sequence
-        text = f"[CLS] Prompt: {p} [SEP] Response A: {a} [SEP] Response B: {b} [SEP]"
-        enc = self.tokenizer(
-            text,
-            max_length=self.max_length,
-            truncation=True,
-            padding="max_length",
-            return_tensors="pt",
-        )
-        item = {
-            "input_ids": enc["input_ids"].squeeze(0),
-            "attention_mask": enc["attention_mask"].squeeze(0),
-        }
-        if not self.is_test:
-            item["label"] = torch.tensor(self.labels[idx], dtype=torch.long)
-        return item"""
+        seq = [cls_id] + p_ids + [sep_id] + a_ids + [sep_id] + b_ids + [sep_id]
+        if len(seq) > max_length:
+            seq = seq[:max_length]
+        seq_len = len(seq)
+        all_ids[i, :seq_len] = seq
+        all_masks[i, :seq_len] = 1
+
+    t_ids = torch.from_numpy(all_ids)
+    t_masks = torch.from_numpy(all_masks)
+
+    if not is_test:
+        t_labels = torch.from_numpy(labels).long()
+        return TensorDataset(t_ids, t_masks, t_labels)
+    else:
+        return TensorDataset(t_ids, t_masks)"""
 
 cell_4_model = """class DebertaPreferenceClassifier(nn.Module):
     \"\"\"
@@ -383,13 +381,18 @@ df_fold_val = df_train.iloc[val_idx].reset_index(drop=True)
 y_val_onehot = df_fold_val[TARGET_COLUMNS].values
 
 # Datasets & Loaders
-train_dataset = PreferenceDataset(df_fold_train, tokenizer, max_length=MAX_LENGTH)
-val_dataset_orig = PreferenceDataset(df_fold_val, tokenizer, max_length=MAX_LENGTH, is_test=True, swap_pairs=False)
-val_dataset_swap = PreferenceDataset(df_fold_val, tokenizer, max_length=MAX_LENGTH, is_test=True, swap_pairs=True)
+print("Pre-tokenizing training set with balanced segment allocation...")
+t0_tok = time.time()
+train_dataset = prepare_tokenized_dataset(df_fold_train, tokenizer, max_length=MAX_LENGTH)
+print(f"Pre-tokenized {len(df_fold_train)} training sequences in {time.time() - t0_tok:.1f}s.")
 
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2, pin_memory=True)
-val_loader_orig = DataLoader(val_dataset_orig, batch_size=BATCH_SIZE * 2, shuffle=False, num_workers=2)
-val_loader_swap = DataLoader(val_dataset_swap, batch_size=BATCH_SIZE * 2, shuffle=False, num_workers=2)
+print("Pre-tokenizing validation set (original & swapped TTA)...")
+val_dataset_orig = prepare_tokenized_dataset(df_fold_val, tokenizer, max_length=MAX_LENGTH, is_test=True, swap_pairs=False)
+val_dataset_swap = prepare_tokenized_dataset(df_fold_val, tokenizer, max_length=MAX_LENGTH, is_test=True, swap_pairs=True)
+
+train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, pin_memory=True)
+val_loader_orig = DataLoader(val_dataset_orig, batch_size=BATCH_SIZE * 2, shuffle=False)
+val_loader_swap = DataLoader(val_dataset_swap, batch_size=BATCH_SIZE * 2, shuffle=False)
 
 # Model Initialization
 model = DebertaPreferenceClassifier(MODEL_PATH, num_labels=3).to(DEVICE)
@@ -413,10 +416,10 @@ for epoch in range(EPOCHS):
     optimizer.zero_grad()
     t_start = time.time()
 
-    for step, batch in enumerate(train_loader):
-        input_ids = batch["input_ids"].to(DEVICE)
-        attention_mask = batch["attention_mask"].to(DEVICE)
-        labels = batch["label"].to(DEVICE)
+    for step, (input_ids, attention_mask, labels) in enumerate(train_loader):
+        input_ids = input_ids.to(DEVICE)
+        attention_mask = attention_mask.to(DEVICE)
+        labels = labels.to(DEVICE)
 
         with torch.cuda.amp.autocast():
             outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
@@ -442,15 +445,15 @@ for epoch in range(EPOCHS):
     val_preds_swap = []
 
     with torch.no_grad():
-        for b_orig in val_loader_orig:
+        for input_ids, attention_mask in val_loader_orig:
             with torch.cuda.amp.autocast():
-                out = model(b_orig["input_ids"].to(DEVICE), b_orig["attention_mask"].to(DEVICE))
+                out = model(input_ids.to(DEVICE), attention_mask.to(DEVICE))
                 p = torch.softmax(out.logits if hasattr(out, "logits") else out, dim=1).cpu().numpy()
                 val_preds_orig.append(p)
 
-        for b_swap in val_loader_swap:
+        for input_ids, attention_mask in val_loader_swap:
             with torch.cuda.amp.autocast():
-                out = model(b_swap["input_ids"].to(DEVICE), b_swap["attention_mask"].to(DEVICE))
+                out = model(input_ids.to(DEVICE), attention_mask.to(DEVICE))
                 p = torch.softmax(out.logits if hasattr(out, "logits") else out, dim=1).cpu().numpy()
                 val_preds_swap.append(p)
 
@@ -481,17 +484,24 @@ cal_val_loss = compute_log_loss(y_val_onehot, cal_val_preds)
 print(f"Calibrated Validation Log Loss: {cal_val_loss:.5f} (Params: T={calibrator.t_pair:.4f}, Beta={calibrator.beta_tie:.4f}, Alpha={calibrator.alpha_tie:.4f})")"""
 
 cell_7_inference = """# Load Best Checkpoint & Test Dataset
-print(f"Loading best checkpoint from {CHECKPOINT_PATH}...")
-best_model = DebertaPreferenceClassifier(MODEL_PATH, num_labels=3).to(DEVICE)
-best_model.load_state_dict(torch.load(CHECKPOINT_PATH, map_location=DEVICE))
+if os.path.exists(CHECKPOINT_PATH):
+    print(f"Loading best checkpoint from {CHECKPOINT_PATH}...")
+    best_model = DebertaPreferenceClassifier(MODEL_PATH, num_labels=3).to(DEVICE)
+    best_model.load_state_dict(torch.load(CHECKPOINT_PATH, map_location=DEVICE))
+else:
+    print(f"Checkpoint not found at {CHECKPOINT_PATH}, using current model...")
+    best_model = model.module if hasattr(model, "module") else model
 best_model.eval()
 
 print(f"Loading test data from {TEST_PATH}...")
 df_test = load_dataset(TEST_PATH, is_test=True)
 df_sample = pd.read_csv(SAMPLE_SUB_PATH)
 
-test_dataset_orig = PreferenceDataset(df_test, tokenizer, max_length=MAX_LENGTH, is_test=True, swap_pairs=False)
-test_dataset_swap = PreferenceDataset(df_test, tokenizer, max_length=MAX_LENGTH, is_test=True, swap_pairs=True)
+print("Pre-tokenizing test dataset (original & swapped TTA)...")
+t0_test_tok = time.time()
+test_dataset_orig = prepare_tokenized_dataset(df_test, tokenizer, max_length=MAX_LENGTH, is_test=True, swap_pairs=False)
+test_dataset_swap = prepare_tokenized_dataset(df_test, tokenizer, max_length=MAX_LENGTH, is_test=True, swap_pairs=True)
+print(f"Pre-tokenized {len(df_test)} test battles in {time.time() - t0_test_tok:.1f}s.")
 
 test_loader_orig = DataLoader(test_dataset_orig, batch_size=BATCH_SIZE * 2, shuffle=False)
 test_loader_swap = DataLoader(test_dataset_swap, batch_size=BATCH_SIZE * 2, shuffle=False)
@@ -502,15 +512,15 @@ test_preds_swap = []
 
 print(f"Running TTA Inference on {len(df_test)} test battles...")
 with torch.no_grad():
-    for batch in test_loader_orig:
+    for input_ids, attention_mask in test_loader_orig:
         with torch.cuda.amp.autocast():
-            out = best_model(batch["input_ids"].to(DEVICE), batch["attention_mask"].to(DEVICE))
+            out = best_model(input_ids.to(DEVICE), attention_mask.to(DEVICE))
             p = torch.softmax(out.logits if hasattr(out, "logits") else out, dim=1).cpu().numpy()
             test_preds_orig.append(p)
 
-    for batch in test_loader_swap:
+    for input_ids, attention_mask in test_loader_swap:
         with torch.cuda.amp.autocast():
-            out = best_model(batch["input_ids"].to(DEVICE), batch["attention_mask"].to(DEVICE))
+            out = best_model(input_ids.to(DEVICE), attention_mask.to(DEVICE))
             p = torch.softmax(out.logits if hasattr(out, "logits") else out, dim=1).cpu().numpy()
             test_preds_swap.append(p)
 
