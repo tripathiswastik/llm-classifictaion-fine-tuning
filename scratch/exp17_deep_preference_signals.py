@@ -47,6 +47,14 @@ class Exp17FeatureExtractor(FeatureExtractor):
     def transform(self, df: pd.DataFrame) -> np.ndarray:
         X_base_mat = super().transform(df)
 
+        if (
+            self.tfidf_vectorizer is None
+            or self.svd is None
+            or self.char_vectorizer is None
+            or self.char_svd is None
+        ):
+            raise ValueError("Exp17FeatureExtractor must be fitted before calling transform")
+
         # Compute additional engineered columns
         p_texts = df["prompt_text"].values
         a_texts = df["response_a_text"].values
